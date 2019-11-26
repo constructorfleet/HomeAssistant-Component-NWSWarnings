@@ -7,11 +7,13 @@ API Documentation
 https://www.weather.gov/documentation/services-web-api
 ---------------------------------------------------------
 """
+import asyncio
 import logging
 import time
 from datetime import timedelta, datetime, timezone
 
-import requests
+import aiohttp
+import async_timeout
 import voluptuous as vol
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.const import (
@@ -24,7 +26,9 @@ from homeassistant.const import (
     ATTR_LONGITUDE,
 )
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.entity import Entity
+from homeassistant.util import Throttle
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,7 +77,7 @@ DEFAULT_NAME = 'NWS Warnings'
 
 ATTR_UPDATES = 'updates'
 
-MIN_TIME_BETWEEN_UPDATES = timedelta(minutes=1)
+MIN_TIME_BETWEEN_UPDATES = timedelta(minutes=5)
 
 DEFAULT_ICON = 'mdi:alert'
 
@@ -145,6 +149,7 @@ class NWSWarningsEntity(Entity):
         self._active_only = not self._forecast_days
         self._state = ''
         self._updates = []
+        self._websession = None
 
     @property
     def name(self):
@@ -184,6 +189,7 @@ class NWSWarningsEntity(Entity):
             return [None, None]
         return [latitude, longitude]
 
+    @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def async_update(self):
         """Retrieve information from NWS api."""
         latitude = None
@@ -195,7 +201,7 @@ class NWSWarningsEntity(Entity):
             [latitude, longitude] = self._get_zone_lat_long()
 
         if not latitude or not longitude:
-            return
+            return False
 
         params = _get_query_params(
             self._severity,
@@ -218,24 +224,36 @@ class NWSWarningsEntity(Entity):
                 end.isoformat()
             )
 
+        url = NWS_API_ENDPOINT if not self._active_only else "%s/active" % NWS_API_ENDPOINT
+
+        if self._websession is None:
+            self._websession = async_create_clientsession(self._hass)
+
         try:
-            url = NWS_API_ENDPOINT if not self._active_only else "%s/active" % NWS_API_ENDPOINT
-            r = requests.get(url, params=params, headers=_get_headers())
 
-            r.raise_for_status()
+            with async_timeout.timeout(10):
+                response = await self._websession.get(url, params=params, headers=_get_headers())
 
-            self._state = ''
-            self._updates = []
-            for feature in r.json().get('features', []):
-                update = feature.get('properties', {}).get('headline', None)
-                if update:
-                    self._updates.append(update)
+                if response.status != 200:
+                    _LOGGER.warning("Error %d getting nws alerts.", response.status)
+                    return False
 
-            if len(self._updates) > 0:
-                self._state = self._updates[0]
+                json = await response.json()
 
-        except requests.HTTPError as err:
+                self._state = ' '
+                self._updates = []
+                for feature in json.get('features', []):
+                    update = feature.get('properties', {}).get('headline', None)
+                    if update:
+                        self._updates.append(update)
+
+                if len(self._updates) > 0:
+                    self._state = self._updates[0]
+
+                return True
+
+        except (asyncio.TimeoutError, aiohttp.ClientError) as err:
             _LOGGER.error("Unable to update %s: %s",
                           self.entity_id,
                           str(err))
-            return
+            return False
