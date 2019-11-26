@@ -212,7 +212,8 @@ class NWSWarningsEntity(Entity):
         )
 
         if not self._active_only:
-            utc_offset = timedelta(seconds=-(time.altzone if time.localtime().tm_isdst else time.timezone))
+            utc_offset = timedelta(
+                seconds=-(time.altzone if time.localtime().tm_isdst else time.timezone))
             now = datetime.now().replace(tzinfo=timezone(offset=utc_offset))
             start = datetime(year=now.year, month=now.month,
                              day=now.day, hour=0, second=0,
