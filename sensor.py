@@ -163,6 +163,11 @@ class NWSWarningsEntity(Entity):
     async def async_update(self):
         """Retrieve information from NWS api."""
         zone = self._hass.states.get(self._zone)
+        if not zone:
+            _LOGGER.error("Unable to retrieve zone %s",
+                          self._zone)
+            return
+
         latitude = zone.attributes.get(ATTR_LATITUDE, None)
         longitude = zone.attributes.get(ATTR_LONGITUDE, None)
         if not latitude or not longitude:
