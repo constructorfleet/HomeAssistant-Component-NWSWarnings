@@ -129,8 +129,8 @@ class NWSWarningsEntity(Entity):
         self._hass = hass
         self._name = config[CONF_NAME]
         self._icon = config[CONF_ICON]
-        self._severity = config[CONF_SEVERITY].join(",")
-        self._message_type = config[CONF_MESSAGE_TYPE].join(",")
+        self._severity = ','.join(config[CONF_SEVERITY])
+        self._message_type = ','.join(config[CONF_MESSAGE_TYPE])
         self._zone = config[CONF_ZONE]
         self._forecast_days = config.get(CONF_FORECAST_DAYS, None)
         self._active_only = not self._forecast_days
