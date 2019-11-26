@@ -8,7 +8,7 @@ https://www.weather.gov/documentation/services-web-api
 ---------------------------------------------------------
 """
 import logging
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 import requests
 import voluptuous as vol
@@ -178,10 +178,14 @@ class NWSWarningsEntity(Entity):
         )
 
         if not self._active_only:
+            now = datetime.now()
+            start = datetime(year=now.year, month=now.month,
+                             day=now.day, hour=0, second=0)
+            end = start + timedelta(days=self._forecast_days)
             params = _append_time_params(
                 params,
-                None,
-                None
+                start.isoformat(),
+                end.isoformat()
             )
 
         try:
