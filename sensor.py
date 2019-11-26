@@ -8,7 +8,8 @@ https://www.weather.gov/documentation/services-web-api
 ---------------------------------------------------------
 """
 import logging
-from datetime import timedelta, datetime
+import time
+from datetime import timedelta, datetime, timezone
 
 import requests
 import voluptuous as vol
@@ -204,9 +205,12 @@ class NWSWarningsEntity(Entity):
         )
 
         if not self._active_only:
-            now = datetime.now()
+            utc_offset_sec = time.altzone if time.localtime().tm_isdst else time.timezone
+            utc_offset = timedelta(seconds=-utc_offset_sec)
+            now = datetime.now().replace(tzinfo=timezone(offset=utc_offset))
             start = datetime(year=now.year, month=now.month,
-                             day=now.day, hour=0, second=0)
+                             day=now.day, hour=0, second=0,
+                             tzinfo=timezone(offset=utc_offset))
             end = start + timedelta(days=self._forecast_days)
             params = _append_time_params(
                 params,
@@ -215,7 +219,8 @@ class NWSWarningsEntity(Entity):
             )
 
         try:
-            r = requests.get(NWS_API_ENDPOINT, params=params, headers=_get_headers())
+            url = NWS_API_ENDPOINT if not self._active_only else "%s/active" % NWS_API_ENDPOINT
+            r = requests.get(url, params=params, headers=_get_headers())
 
             r.raise_for_status()
 
