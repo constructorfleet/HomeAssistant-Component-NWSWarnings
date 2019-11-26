@@ -240,15 +240,17 @@ class NWSWarningsEntity(Entity):
 
                 json = await response.json()
 
-                self._state = ' '
-                self._updates = []
+                self._state = None
+                self._updates = {}
                 for feature in json.get('features', []):
                     update = feature.get('properties', {}).get('headline', None)
-                    if update:
-                        self._updates.append(update)
+                    sent = feature.get('properties', {}).get('sent', None)
+                    if update and sent:
+                        if not self._state:
+                            self._state = update
+                        self._updates[sent] = update
 
-                if len(self._updates) > 0:
-                    self._state = self._updates[0]
+                self._state = self._state or ' '
 
                 return True
 
