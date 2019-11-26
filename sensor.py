@@ -189,6 +189,7 @@ class NWSWarningsEntity(Entity):
             return [None, None]
         return [latitude, longitude]
 
+    # pylint: disable=too-many-locals
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def async_update(self):
         """Retrieve information from NWS api."""
@@ -211,8 +212,7 @@ class NWSWarningsEntity(Entity):
         )
 
         if not self._active_only:
-            utc_offset_sec = time.altzone if time.localtime().tm_isdst else time.timezone
-            utc_offset = timedelta(seconds=-utc_offset_sec)
+            utc_offset = timedelta(seconds=-(time.altzone if time.localtime().tm_isdst else time.timezone))
             now = datetime.now().replace(tzinfo=timezone(offset=utc_offset))
             start = datetime(year=now.year, month=now.month,
                              day=now.day, hour=0, second=0,
