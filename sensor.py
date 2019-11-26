@@ -15,10 +15,12 @@ import voluptuous as vol
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.const import (
     CONF_NAME,
-    ATTR_ATTRIBUTION,
     CONF_ICON,
+    CONF_LATITUDE,
+    CONF_LONGITUDE,
+    ATTR_ATTRIBUTION,
     ATTR_LATITUDE,
-    ATTR_LONGITUDE
+    ATTR_LONGITUDE,
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import Entity
@@ -54,6 +56,7 @@ CONF_SEVERITY = 'severity'
 CONF_MESSAGE_TYPE = 'message_type'
 CONF_FORECAST_DAYS = 'forecast_days'
 CONF_ZONE = 'zone'
+CONF_LOCATION = 'location'
 
 DEFAULT_MESSAGE_TYPE = [
     'alert',
@@ -87,7 +90,11 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
         cv.positive_int,
         vol.Range(min=1, max=5)
     ),
-    vol.Optional(CONF_ZONE, default=DEFAULT_ZONE): cv.entity_id,
+    vol.Exclusive(CONF_ZONE, "location"): cv.entity_id,
+    vol.Exclusive(CONF_LOCATION, "location"): vol.Schema({
+        vol.Required(CONF_LATITUDE): cv.latitude,
+        vol.Required(CONF_LONGITUDE): cv.longitude
+    }),
     vol.Optional(CONF_ICON, default=DEFAULT_ICON): cv.icon
 })
 
@@ -131,7 +138,8 @@ class NWSWarningsEntity(Entity):
         self._icon = config[CONF_ICON]
         self._severity = ','.join(config[CONF_SEVERITY])
         self._message_type = ','.join(config[CONF_MESSAGE_TYPE])
-        self._zone = config[CONF_ZONE]
+        self._zone = config.get(CONF_ZONE, None)
+        self._location = config.get(CONF_LOCATION, None)
         self._forecast_days = config.get(CONF_FORECAST_DAYS, None)
         self._active_only = not self._forecast_days
         self._state = ''
@@ -160,19 +168,32 @@ class NWSWarningsEntity(Entity):
             ATTR_ATTRIBUTION: "Data provided by NWS"
         }
 
-    async def async_update(self):
-        """Retrieve information from NWS api."""
+    def _get_zone_lat_long(self):
         zone = self._hass.states.get(self._zone)
         if not zone:
             _LOGGER.error("Unable to retrieve zone %s",
                           self._zone)
-            return
+            return [None, None]
 
         latitude = zone.attributes.get(ATTR_LATITUDE, None)
         longitude = zone.attributes.get(ATTR_LONGITUDE, None)
         if not latitude or not longitude:
             _LOGGER.error("Unable to retrieve latitude and longitude from %s",
                           self._zone)
+            return [None, None]
+        return [latitude, longitude]
+
+    async def async_update(self):
+        """Retrieve information from NWS api."""
+        latitude = None
+        longitude = None
+        if self._location:
+            latitude = self._location.get(CONF_LATITUDE, None)
+            longitude = self._location.get(CONF_LONGITUDE, None)
+        elif self._zone:
+            [latitude, longitude] = self._get_zone_lat_long()
+
+        if not latitude or not longitude:
             return
 
         params = _get_query_params(
