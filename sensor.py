@@ -131,6 +131,7 @@ async def async_setup_platform(hass, config, add_entities, discovery_info=None):
     """Setup the NWS sensor platform."""
     sensor = NWSWarningsEntity(hass, config)
     add_entities([sensor])
+    return True
 
 
 # pylint: disable=too-many-instance-attributes
@@ -214,11 +215,11 @@ class NWSWarningsEntity(Entity):
         if not self._active_only:
             utc_offset = timedelta(
                 seconds=-(time.altzone if time.localtime().tm_isdst else time.timezone))
-            now = datetime.now().replace(tzinfo=timezone(offset=utc_offset))
+            now = (datetime.now().replace(tzinfo=timezone(offset=utc_offset)) - timedelta(days=1))
             start = datetime(year=now.year, month=now.month,
                              day=now.day, hour=0, second=0,
                              tzinfo=timezone(offset=utc_offset))
-            end = start + timedelta(days=self._forecast_days)
+            end = start + timedelta(days=self._forecast_days + 1)
             params = _append_time_params(
                 params,
                 start.isoformat(),
