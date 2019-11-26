@@ -1,71 +1,141 @@
-'''
----------------------------------------------------------
-NWS Warnings
----------------------------------------------------------
-
-Version 0.1
-Written by Matt Caminiti
-https://github.com/mcaminiti/nws_warnings
-
-Forked from VERSION: 0.0.2 of NWS Alerts
-Forum: https://community.home-assistant.io/t/severe-weather-alerts-from-the-us-national-weather-service/71853
+"""
+Integration with NWS severe weather warnings API
+Forked from VERSION: 0.0.1 of https://github.com/mcaminiti/nws_warnings
 
 API Documentation
 ---------------------------------------------------------
 https://www.weather.gov/documentation/services-web-api
 ---------------------------------------------------------
-'''
-import requests
+"""
 import logging
-import voluptuous as vol
 from datetime import timedelta
+
+import requests
+import voluptuous as vol
 from homeassistant.components.sensor import PLATFORM_SCHEMA
-from homeassistant.const import CONF_NAME, ATTR_ATTRIBUTION
+from homeassistant.const import (
+    CONF_NAME,
+    ATTR_ATTRIBUTION,
+    CONF_ICON,
+    ATTR_LATITUDE,
+    ATTR_LONGITUDE
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import Entity
-from homeassistant.util import Throttle
 
-
-API_ENDPOINT = 'https://api.weather.gov'
-USER_AGENT = 'Home Assistant'
-MIN_TIME_BETWEEN_UPDATES = timedelta(minutes=1)
 _LOGGER = logging.getLogger(__name__)
+
+DOMAIN = 'nws_warnings'
+
+NWS_API_ENDPOINT = 'https://api.weather.gov/alerts'
+
+USER_AGENT = 'Home Assistant'
+
+PARAM_POINT = 'point'
+PARAM_START = 'start'
+PARAM_END = 'end'
+PARAM_STATUS = 'status'
+PARAM_MESSAGE_TYPE = 'message_type'
+PARAM_SEVERITY = 'severity'
+
+VALID_MESSAGE_TYPE = [
+    'alert',
+    'update'
+]
+VALID_SEVERITY = [
+    'unknown',
+    'minor',
+    'moderate',
+    'severe',
+    'extreme'
+]
+
+CONF_SEVERITY = 'severity'
+CONF_MESSAGE_TYPE = 'message_type'
+CONF_FORECAST_DAYS = 'forecast_days'
+CONF_ZONE = 'zone'
+
+DEFAULT_MESSAGE_TYPE = [
+    'alert',
+    'update'
+]
+DEFAULT_SEVERITY = [
+    'moderate',
+    'severe',
+    'extreme'
+]
+DEFAULT_ZONE = 'zone.home'
 DEFAULT_NAME = 'NWS Warnings'
+
+ATTR_UPDATES = 'updates'
+
+MIN_TIME_BETWEEN_UPDATES = timedelta(minutes=1)
+
 DEFAULT_ICON = 'mdi:alert'
-CONF_ZONE_ID = 'zone_id'
-ZONE_ID = ''
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
-    vol.Required(CONF_ZONE_ID): cv.string,
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+    vol.Optional(CONF_SEVERITY, default=DEFAULT_SEVERITY): vol.All(
+        cv.ensure_list,
+        [vol.In(VALID_SEVERITY)]
+    ),
+    vol.Optional(CONF_MESSAGE_TYPE, default=DEFAULT_MESSAGE_TYPE): vol.All(
+        cv.ensure_list,
+        [vol.In(VALID_MESSAGE_TYPE)]
+    ),
+    vol.Optional(CONF_FORECAST_DAYS): vol.All(
+        cv.positive_int,
+        vol.Range(min=1, max=5)
+    ),
+    vol.Optional(CONF_ZONE, default=DEFAULT_ZONE): cv.entity_id,
+    vol.Optional(CONF_ICON, default=DEFAULT_ICON): cv.icon
 })
 
 
-def setup_platform(hass, config, add_devices, discovery_info=None):
-    """Setup the sensor platform."""
-    name = config.get(CONF_NAME, DEFAULT_NAME)
-    zone_id = config.get(CONF_ZONE_ID)
-    add_devices([NWSAlertSensor(name, zone_id)])
+def _get_headers():
+    return {
+        'User-Agent': USER_AGENT,
+        'Accept': 'application/geo+json'
+    }
 
 
-class NWSAlertSensor(Entity):
-    """Representation of a Sensor."""
+def _get_query_params(severity, message_type, latitude, longitude):
+    return {
+        PARAM_MESSAGE_TYPE: message_type,
+        PARAM_SEVERITY: severity,
+        PARAM_POINT: "%s,%s" % (latitude, longitude)
+    }
 
-    def __init__(self, name, zone_id):
-        """Initialize the sensor."""
-        self._name = name
-        self._icon = DEFAULT_ICON
-        self._state = 0
-        self._severe_thunderstorm_warning = 0
-        self._winter_storm_warning = 0
-        self._severe_thunderstorm_warning_headline = None
-        self._winter_storm_warning_headline = None
-        self._tornado_watch = 0
-        self._tornado_warning = 0
-        self._tornado_watch_headline = None
-        self._tornado_warning_headline = None
-        self._zone_id = zone_id.replace(' ', '')
-        self.update()
+
+def _append_time_params(params, start, end):
+    if start and end:
+        params[PARAM_START] = start
+        params[PARAM_END] = end
+
+    return params
+
+
+async def async_setup_platform(hass, config, add_entities, discovery_info=None):
+    """Setup the NWS sensor platform."""
+    sensor = NWSWarningsEntity(hass, config)
+    add_entities([sensor])
+
+
+# pylint: disable=too-many-instance-attributes
+class NWSWarningsEntity(Entity):
+    """Sensor entity for NWS warnings"""
+
+    def __init__(self, hass, config):
+        self._hass = hass
+        self._name = config[CONF_NAME]
+        self._icon = config[CONF_ICON]
+        self._severity = config[CONF_SEVERITY].join(",")
+        self._message_type = config[CONF_MESSAGE_TYPE].join(",")
+        self._zone = config[CONF_ZONE]
+        self._forecast_days = config.get(CONF_FORECAST_DAYS, None)
+        self._active_only = not self._forecast_days
+        self._state = ''
+        self._updates = []
 
     @property
     def name(self):
@@ -84,142 +154,53 @@ class NWSAlertSensor(Entity):
 
     @property
     def device_state_attributes(self):
-        """Return the state message."""
-        attributes = {"severe_thunderstorm_warning": self._severe_thunderstorm_warning,
-                      "tornado_watch": self._tornado_watch,
-                      "tornado_warning": self._tornado_warning,
-                      "winter_storm_warning": self._winter_storm_warning,
-                      "severe_thunderstorm_warning_headline": self._severe_thunderstorm_warning_headline,
-                      "tornado_watch_headline": self._tornado_watch_headline,
-                      "tornado_warning_headline": self._tornado_warning_headline,
-                      "winter_storm_warning_headline": self._winter_storm_warning_headline
-                      }
+        """Return the device specific state attributes."""
+        return {
+            ATTR_UPDATES: self._updates,
+            ATTR_ATTRIBUTION: "Data provided by NWS"
+        }
 
-        return attributes
+    async def async_update(self):
+        """Retrieve information from NWS api."""
+        zone = self._hass.states.get(self._zone)
+        latitude = zone.attributes.get(ATTR_LATITUDE, None)
+        longitude = zone.attributes.get(ATTR_LONGITUDE, None)
+        if not latitude or not longitude:
+            _LOGGER.error("Unable to retrieve latitude and longitude from %s",
+                          self._zone)
+            return
 
-    @Throttle(MIN_TIME_BETWEEN_UPDATES)
-    def update(self):
-        """Fetch new state data for the sensor.
-        This is the only method that should fetch new data for Home Assistant.
-        """
-        values = self.get_state()
-        self._state = values['state']
-        self._severe_thunderstorm_warning = values['severe_thunderstorm_warning']
-        self._tornado_watch = values['tornado_watch']
-        self._tornado_warning = values['tornado_warning']
-        self._winter_storm_warning = values['winter_storm_warning']
-        self._severe_thunderstorm_warning_headline = values['severe_thunderstorm_warning_headline']
-        self._tornado_watch_headline = values['tornado_watch_headline']
-        self._tornado_warning_headline = values['tornado_warning_headline']
-        self._winter_storm_warning_headline = values['winter_storm_warning_headline']
+        params = _get_query_params(
+            self._severity,
+            self._message_type,
+            latitude,
+            longitude
+        )
 
+        if not self._active_only:
+            params = _append_time_params(
+                params,
+                None,
+                None
+            )
 
+        try:
+            r = requests.get(NWS_API_ENDPOINT, params=params, headers=_get_headers())
 
-    def get_state(self):
-        values = {'state': 0,
-                  'severe_thunderstorm_warning': 0,
-                  'tornado_watch': 0,
-                  'tornado_warning': 0,
-                  'winter_storm_warning': 0,
-                  'severe_thunderstorm_warning_headline': None,
-                  'tornado_watch_headline': None,
-                  'tornado_warning_headline': None,
-                  'winter_storm_warning_headline': None
-                  }
+            r.raise_for_status()
 
-        headers = {'User-Agent': USER_AGENT,
-                   'Accept': 'application/ld+json'
-                   }
+            self._state = ''
+            self._updates = []
+            for feature in r.json().get('features', []):
+                update = feature.get('properties', {}).get('headline', None)
+                if update:
+                    self._updates.append(update)
 
-        url = '%s/alerts/active/count' % API_ENDPOINT
-        r = requests.get(url, headers=headers)
-        _LOGGER.debug("getting state, %s", url)
-        if r.status_code == 200:
-            if 'zones' in r.json():
-                for zone in self._zone_id.split(','):
-                    if zone in r.json()['zones']:
-                        values = self.get_alerts()
-                        break
+            if len(self._updates) > 0:
+                self._state = self._updates[0]
 
-        return values
-
-    def get_alerts(self):
-        values = {'state': 0,
-                  'severe_thunderstorm_warning': 0,
-                  'winter_storm_warning': 0,
-                  'severe_thunderstorm_warning_headline': None,
-                  'winter_storm_warning_headline': None,
-                  'tornado_watch': 0,
-                  'tornado_warning': 0,
-                  'tornado_watch_headline': None,
-                  'tornado_warning_headline': None
-                  }
-
-        headers = {'User-Agent': USER_AGENT,
-                   'Accept': 'application/geo+json'
-                   }
-        url = '%s/alerts/active?zone=%s' % (API_ENDPOINT, self._zone_id)
-        r = requests.get(url, headers=headers)
-        _LOGGER.debug("getting alert, %s", url)
-        if r.status_code == 200:
-            events = []
-            headlines = []
-            description = ''
-            severe_thunderstorm_warning = ''
-            winter_storm_warning = ''
-            severe_thunderstorm_warning_count = 0
-            severe_thunderstorm_warning_headline = ''
-            winter_storm_warning_count = 0
-            winter_storm_warning_headline = ''
-            tornado_watch = ''
-            tornado_warning = ''
-            tornado_watch_count = 0
-            tornado_watch_headline = ''
-            tornado_warning_count = 0
-            tornado_warning_headline = ''
-            alertcount = 0
-            eventname = ''
-            features = r.json()['features']
-            for alert in features:
-                event = alert['properties']['event']
-                if event == 'Severe Thunderstorm Warning':
-                    alertcount = alertcount + 1
-                    severe_thunderstorm_warning_count = 1
-                    severe_thunderstorm_warning_headline = alert['properties']['headline']
-#                    description = alert['properties']['description']
-                    eventname = 'Severe Thunderstorm Warning'
-                if event == 'Winter Storm Warning':
-                    alertcount = alertcount + 1
-                    winter_storm_warning_count = 1
-                    winter_storm_warning_headline = alert['properties']['headline']
-#                    description = alert['properties']['description']
-                    eventname = 'Winter Storm Warning'
-                if event == 'Tornado Watch':
-                    alertcount = alertcount + 1
-                    tornado_watch_count = 1
-                    tornado_watch_headline = alert['properties']['headline']
-#                    description = alert['properties']['description']
-                    eventname = 'Tornado Watch'
-                if event == 'Tornado Warning':
-                    alertcount = alertcount + 1
-                    tornado_warning_count = 1
-                    tornado_warning_headline = alert['properties']['headline']
-#                    description = alert['properties']['description']
-                    eventname = 'Tornado Warning'
-
-                if event in events:
-                    continue
-
-                values['state'] = alertcount
-                values['severe_thunderstorm_warning'] = severe_thunderstorm_warning_count
-                values['tornado_watch'] = tornado_watch_count
-                values['tornado_warning'] = tornado_warning_count
-                values['winter_storm_warning'] = winter_storm_warning_count
-                values['severe_thunderstorm_warning_headline'] = severe_thunderstorm_warning_headline
-                values['tornado_watch_headline'] = tornado_watch_headline
-                values['tornado_warning_headline'] = tornado_warning_headline
-                values['winter_storm_warning_headline'] = winter_storm_warning_headline
-
-
-
-        return values
+        except requests.HTTPError as err:
+            _LOGGER.error("Unable to update %s: %s",
+                          self.entity_id,
+                          str(err))
+            return

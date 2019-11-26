@@ -1,0 +1,10 @@
+{
+  "domain": "nws_warnings",
+  "name": "NWS Severe Weather Warnings",
+  "documentation": "https://github.com/constructorfleet/HomeAssistant-Component-NWSWarnings",
+  "dependencies": [],
+  "codeowners": [
+  	"Teagan42"
+  ],
+  "requirements": []
+}

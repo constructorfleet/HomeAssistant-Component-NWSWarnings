@@ -5,30 +5,26 @@ Home Assistant Custom Component for National Weather Service Warnings
 1. Place folder (nws_warnings) in custom_components folder
 
 # Configuration
-1. Lookup Zone or County Code on NWS site https://www.weather.gov/lsx/
-- Type in City and State and perform a lookup.  Scroll down and pick "ZONE AREA FORCAST FOR XXXXXX COUNTY".  
-- ZoneID will be displayed in the URL
-2. Add configuration to Home Assistant sensors.yaml or configuration as a sensor
-```
-### WEATHER SERVICE Sensors
+```yaml
+sensor:
   - platform: nws_warnings
-    zone_id: 'XXXXXX'
+    name: NWS Warnings
+    icon: mdi:alert
+    severity:
+      - extreme
+      - severe
+    message_type:
+      - alert
+      - update
+    zone: zone.home
+    forecast_days: 3
 ```
 
-# Sensors Activated
-NWS Warnings will show a total count of alerts present for your county / zone.
-
-![UI](images/nws_warnings.png?raw=true "NWS Warnings")
-![UI](images/nws_warnings_attributes.png?raw=true "NWS Warnings Attributes")
-
-# Current Monitors and Severitys
-- Severe Thunderstorm Warning
-- Tornado Watch
-- Tornado Warning
-- Winter Storm Warning
-
-# Example Template Sensors / Customizations
-TBD
-
-# Example Automations
-TBD
+**name** (optional)(string) Name of the sensor  
+**icon** (optional)(string) Material Design Icon identifier  
+**severity** (optional)(string|list of strings) Severity of alerts to report  
+valid entries: unknown, minor, moderate, severe, extreme  
+**message_type** (optional)(string|list of strings) Message types to report  
+valid enties: alert, update  
+**zone** (optional)(entity_id) Entity ID of the zone to get report for  
+**forecast_days** (optional)(int(1-5)) How many days in the future to retrieve warnings for
