@@ -254,7 +254,10 @@ class NWSWarningsEntity(Entity):
 
                 self._state = self._state or ' '
 
-        except (asyncio.TimeoutError, aiohttp.ClientError) as err:
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout updating %s",
+                          self.entity_id)
+        except aiohttp.ClientError as err:
             _LOGGER.error("Unable to update %s: %s",
                           self.entity_id,
                           str(err))
