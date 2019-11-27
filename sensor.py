@@ -203,7 +203,7 @@ class NWSWarningsEntity(Entity):
             [latitude, longitude] = self._get_zone_lat_long()
 
         if not latitude or not longitude:
-            return False
+            return
 
         params = _get_query_params(
             self._severity,
@@ -238,7 +238,7 @@ class NWSWarningsEntity(Entity):
 
                 if response.status != 200:
                     _LOGGER.warning("Error %d getting nws alerts.", response.status)
-                    return False
+                    return
 
                 json = await response.json()
 
@@ -254,10 +254,7 @@ class NWSWarningsEntity(Entity):
 
                 self._state = self._state or ' '
 
-                return True
-
         except (asyncio.TimeoutError, aiohttp.ClientError) as err:
             _LOGGER.error("Unable to update %s: %s",
                           self.entity_id,
                           str(err))
-            return False
