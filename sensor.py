@@ -234,6 +234,9 @@ class NWSWarningsEntity(Entity):
         try:
 
             with async_timeout.timeout(10):
+                _LOGGER.info("Retrieving alerts from %s with %s",
+                             url,
+                             str(params))
                 response = await self._websession.get(url, params=params, headers=_get_headers())
 
                 if response.status != 200:
