@@ -77,7 +77,7 @@ DEFAULT_NAME = 'NWS Warnings'
 
 ATTR_UPDATES = 'updates'
 
-MIN_TIME_BETWEEN_UPDATES = timedelta(minutes=5)
+MIN_TIME_BETWEEN_UPDATES = timedelta(hours=1)
 
 DEFAULT_ICON = 'mdi:alert'
 
@@ -150,7 +150,6 @@ class NWSWarningsEntity(Entity):
         self._active_only = not self._forecast_days
         self._state = ''
         self._updates = []
-        self._websession = None
 
     @property
     def name(self):
@@ -228,8 +227,7 @@ class NWSWarningsEntity(Entity):
 
         url = NWS_API_ENDPOINT if not self._active_only else "%s/active" % NWS_API_ENDPOINT
 
-        if self._websession is None:
-            self._websession = async_create_clientsession(self._hass)
+        websession = async_create_clientsession(self._hass)
 
         try:
 
@@ -237,7 +235,7 @@ class NWSWarningsEntity(Entity):
                 _LOGGER.warning("Retrieving alerts from %s with %s",
                                 url,
                                 str(params))
-                response = await self._websession.get(url, params=params, headers=_get_headers())
+                response = await websession.get(url, params=params, headers=_get_headers())
 
                 if response.status != 200:
                     _LOGGER.warning("Error %d getting nws alerts.", response.status)
@@ -264,3 +262,5 @@ class NWSWarningsEntity(Entity):
             _LOGGER.error("Unable to update %s: %s",
                           self.entity_id,
                           str(err))
+        finally:
+            await websession.close()
