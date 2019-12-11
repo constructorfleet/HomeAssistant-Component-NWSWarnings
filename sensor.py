@@ -227,33 +227,31 @@ class NWSWarningsEntity(Entity):
 
         url = NWS_API_ENDPOINT if not self._active_only else "%s/active" % NWS_API_ENDPOINT
 
-        websession = async_create_clientsession(self._hass)
-
         try:
+            with aiohttp.ClientSession() as session:
+                with async_timeout.timeout(10):
+                    _LOGGER.warning("Retrieving alerts from %s with %s",
+                                    url,
+                                    str(params))
+                    response = await session.get(url, params=params, headers=_get_headers())
 
-            with async_timeout.timeout(10):
-                _LOGGER.warning("Retrieving alerts from %s with %s",
-                                url,
-                                str(params))
-                response = await websession.get(url, params=params, headers=_get_headers())
+                    if response.status != 200:
+                        _LOGGER.warning("Error %d getting nws alerts.", response.status)
+                        return
 
-                if response.status != 200:
-                    _LOGGER.warning("Error %d getting nws alerts.", response.status)
-                    return
+                    json = await response.json()
 
-                json = await response.json()
+                    self._state = None
+                    self._updates = {}
+                    for feature in json.get('features', []):
+                        update = feature.get('properties', {}).get('headline', None)
+                        sent = feature.get('properties', {}).get('sent', None)
+                        if update and sent:
+                            if not self._state:
+                                self._state = update
+                            self._updates[sent] = update
 
-                self._state = None
-                self._updates = {}
-                for feature in json.get('features', []):
-                    update = feature.get('properties', {}).get('headline', None)
-                    sent = feature.get('properties', {}).get('sent', None)
-                    if update and sent:
-                        if not self._state:
-                            self._state = update
-                        self._updates[sent] = update
-
-                self._state = self._state or ' '
+                    self._state = self._state or ' '
 
         except asyncio.TimeoutError:
             _LOGGER.error("Timeout updating %s",
@@ -262,5 +260,3 @@ class NWSWarningsEntity(Entity):
             _LOGGER.error("Unable to update %s: %s",
                           self.entity_id,
                           str(err))
-        finally:
-            await websession.close()
