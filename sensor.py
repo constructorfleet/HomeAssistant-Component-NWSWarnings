@@ -26,7 +26,6 @@ from homeassistant.const import (
     ATTR_LONGITUDE,
 )
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import Throttle
 
